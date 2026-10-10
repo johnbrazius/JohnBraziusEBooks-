@@ -2,10 +2,10 @@
   "name": "website-growth-lab",
   "version": "0.1.0",
   "private": true,
-  "description": "Website Growth Lab — a multi-ebook digital bookstore with admin dashboard, secure delivery and payment-provider integration.",
+  "description": "Website Growth Lab \u2014 a multi-ebook digital bookstore with admin dashboard, secure delivery and payment-provider integration.",
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "build": "prisma generate && tsx scripts/prepare-db.ts && next build",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
@@ -18,7 +18,8 @@
     "db:studio": "prisma studio",
     "admin:create": "tsx scripts/create-admin.ts",
     "backup:export": "tsx scripts/export-data.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "build:app": "prisma generate && next build"
   },
   "engines": {
     "node": ">=20.9"

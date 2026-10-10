@@ -1,5 +1,34 @@
 # Setup & deployment guide (beginner-friendly)
 
+## ⚡ Quickest path: everything from the Vercel website (no commands needed)
+
+Every deploy now sets up the database for you: it creates the tables, loads the starter categories and pages,
+and creates your first admin account. You only need to paste settings into Vercel:
+
+1. **Supabase** (supabase.com) → New project → note the database password.
+   Click **Connect** and copy two strings, replacing `[YOUR-PASSWORD]` with your password in each:
+   - **Transaction pooler** (port 6543) + add `?pgbouncer=true&connection_limit=1` at the end → `DATABASE_URL`
+   - **Session pooler** (port 5432) → `DIRECT_URL`
+   (Don't use the "Direct connection" `db.<project>.supabase.co`, which doesn't work from Vercel.)
+2. **Vercel** → your project → **Settings → Environment Variables**, add:
+   | Name | Value |
+   |---|---|
+   | `DATABASE_URL` | Transaction pooler string from step 1 |
+   | `DIRECT_URL` | Session pooler string from step 1 |
+   | `AUTH_SECRET` | any random text, **at least 32 characters** |
+   | `NEXT_PUBLIC_SITE_URL` | your site address, e.g. `https://john-brazius-e-books-zeqx.vercel.app` |
+   | `ADMIN_EMAIL` | the email you'll sign in with |
+   | `ADMIN_PASSWORD` | 12+ characters with upper-case, lower-case and a number |
+3. **Deployments → ⋯ → Redeploy.** Open the build log: you should see `[prepare-db] Database ready.`
+4. Open `https://<your-site>/api/health`. Every critical line should say `"ok": true`. Then open the homepage.
+5. Sign in at `/admin/login`, then **delete `ADMIN_PASSWORD`** from Vercel (it's no longer needed).
+6. Add products in the admin. To upload ebook files on the live site, also set up Supabase Storage (section 2,
+   steps 4–6). Do that, then redeploy, and the 6 demo ebooks will be added to an empty store automatically.
+
+The rest of this guide explains each step in more detail and covers running the store on your own computer.
+
+---
+
 This guide takes you from an empty computer to a deployed store. Follow it in order. Each external service is
 explained before you need it.
 

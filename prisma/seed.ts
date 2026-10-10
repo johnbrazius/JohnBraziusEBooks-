@@ -1,8 +1,10 @@
 /**
- * Seeds DEMO data: categories, sample ebooks (flagged isDemo), a bundle, store settings and starter pages.
- * Safe to re-run: existing records (matched by slug/key) are left untouched.
+ * Seeds starter data: store settings, categories, starter pages and (optionally) DEMO ebooks + a bundle,
+ * all flagged isDemo. Safe to re-run: existing records (matched by slug/key) are left untouched.
  *
  *   npm run db:seed
+ *
+ * Also used automatically during Vercel builds by scripts/prepare-db.ts.
  */
 import { PrismaClient } from "@prisma/client";
 import { randomBytes } from "crypto";
@@ -11,9 +13,7 @@ import { DEFAULT_SETTINGS } from "../src/lib/settings-defaults";
 import { makePlaceholderPdf } from "../scripts/lib/pdf";
 import { BUNDLE, CATEGORIES, PAGES, PRODUCTS } from "./seed-content";
 
-const db = new PrismaClient();
-
-async function main() {
+export async function seedDatabase(db: PrismaClient, opts: { demoProducts: boolean }) {
   await db.setting.upsert({ where: { key: "store" }, update: {}, create: { key: "store", value: DEFAULT_SETTINGS } });
 
   for (const [i, c] of CATEGORIES.entries()) {
@@ -21,6 +21,14 @@ async function main() {
   }
   const cats = Object.fromEntries((await db.category.findMany()).map((c) => [c.slug, c.id]));
 
+  if (opts.demoProducts) await seedDemoProducts(db, cats);
+
+  for (const page of PAGES) {
+    await db.page.upsert({ where: { slug: page.slug }, update: {}, create: page });
+  }
+}
+
+async function seedDemoProducts(db: PrismaClient, cats: Record<string, string>) {
   for (const p of PRODUCTS) {
     if (await db.product.findUnique({ where: { slug: p.slug } })) continue;
     const publishedAt = new Date(Date.now() - p.daysAgo * 86_400_000);
@@ -81,17 +89,16 @@ async function main() {
     });
     console.log(`  + demo bundle: ${BUNDLE.title}`);
   }
-
-  for (const page of PAGES) {
-    await db.page.upsert({ where: { slug: page.slug }, update: {}, create: page });
-  }
-
-  console.log("Seed complete. All seeded products are marked as DEMO — replace or archive them before launch.");
 }
 
-main()
-  .catch((e) => {
-    console.error(e);
-    process.exit(1);
-  })
-  .finally(() => db.$disconnect());
+// Run directly: `npm run db:seed`
+if (process.argv[1]?.replace(/\\/g, "/").endsWith("prisma/seed.ts")) {
+  const db = new PrismaClient();
+  seedDatabase(db, { demoProducts: true })
+    .then(() => console.log("Seed complete. All seeded products are marked as DEMO — replace or archive them before launch."))
+    .catch((e) => {
+      console.error(e);
+      process.exit(1);
+    })
+    .finally(() => db.$disconnect());
+}
