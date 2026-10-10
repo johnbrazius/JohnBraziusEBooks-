@@ -64,12 +64,16 @@ With `PAYMENT_PROVIDER=mock` you can "buy" ebooks through a **simulated** checko
    the database password somewhere safe.
 2. **Database connection strings:** Project → **Connect** (top bar):
    - **Transaction pooler** (port **6543**) → use as `DATABASE_URL`, appending `?pgbouncer=true&connection_limit=1`
-   - **Session pooler** or **Direct connection** (port **5432**) → use as `DIRECT_URL` (used only for migrations)
+   - **Session pooler** (port **5432**, host like `aws-0-<region>.pooler.supabase.com`) → use as `DIRECT_URL` (used for migrations)
+
+   > ⚠️ Don't use the **Direct connection** string (`db.<project>.supabase.co`) for either variable unless you bought
+   > Supabase's IPv4 add-on. It only works over IPv6, which **Vercel and many home internet connections don't support**,
+   > so the site hangs or fails to load. Both pooler strings work everywhere.
 3. **Create the tables** from your computer, pointing at Supabase:
    ```bash
-   DATABASE_URL="<direct url>" DIRECT_URL="<direct url>" npx prisma migrate deploy
-   DATABASE_URL="<direct url>" npm run db:seed          # optional demo data
-   DATABASE_URL="<direct url>" npm run admin:create -- --email you@example.com
+   DATABASE_URL="<session pooler url>" DIRECT_URL="<session pooler url>" npx prisma migrate deploy
+   DATABASE_URL="<session pooler url>" npm run db:seed          # optional demo data
+   DATABASE_URL="<session pooler url>" npm run admin:create -- --email you@example.com
    ```
    (On Windows PowerShell, set variables with `$env:DATABASE_URL="..."` on a separate line first.)
 4. **Storage buckets:** Storage → **New bucket**:
@@ -114,7 +118,7 @@ With `PAYMENT_PROVIDER=mock` you can "buy" ebooks through a **simulated** checko
 When a future code change adds a migration (a new folder in `prisma/migrations`), apply it before or right after
 deploying:
 ```bash
-DATABASE_URL="<supabase direct url>" npx prisma migrate deploy
+DATABASE_URL="<supabase session pooler url>" npx prisma migrate deploy
 ```
 
 ---
@@ -170,8 +174,8 @@ Before launch: replace or archive the **demo products** (Admin → Products → 
 
 - **Supabase** backs up the database daily on paid plans. On the free plan, take your own backups:
   ```bash
-  DATABASE_URL="<supabase direct url>" npm run backup:export      # JSON export into ./backups (git-ignored)
-  pg_dump "<supabase direct url>" > backups/db-$(date +%F).sql     # full SQL dump (needs PostgreSQL tools)
+  DATABASE_URL="<supabase session pooler url>" npm run backup:export      # JSON export into ./backups (git-ignored)
+  pg_dump "<supabase session pooler url>" > backups/db-$(date +%F).sql     # full SQL dump (needs PostgreSQL tools)
   ```
 - **Ebook files:** keep your original files on your computer or cloud drive. You can also download the `ebooks`
   bucket from the Supabase dashboard.
@@ -190,14 +194,14 @@ Before launch: replace or archive the **demo products** (Admin → Products → 
 
 ## 10. Troubleshooting
 
-**The site shows "The store can't load right now"** → open `https://<your-site>/api/health`. It lists each setting
+**The site shows "The store can't load right now", or keeps loading and never finishes** → open `https://<your-site>/api/health`. It lists each setting
 with ✓/✗ and a plain-language fix (it never shows secret values). The most common causes on a first deploy:
 
 | `/api/health` says | Fix |
 |---|---|
 | `DATABASE_URL` / `AUTH_SECRET` missing | Add it in Vercel → Settings → Environment Variables, then **Redeploy** (variables only apply to new deployments) |
-| Database connection: wrong username or password / unreachable | Copy the string again from Supabase → Connect; replace `[YOUR-PASSWORD]` with your real database password; un-pause the project |
-| Database tables: not created yet | Run `npx prisma migrate deploy` from your computer with `DATABASE_URL` and `DIRECT_URL` set to the Supabase **direct** connection (section 2.3) |
+| Database connection: wrong username or password / unreachable / IPv6-only host | Copy the string again from Supabase → Connect; replace `[YOUR-PASSWORD]` with your real database password; un-pause the project; use the **pooler** strings, not `db.<project>.supabase.co` |
+| Database tables: not created yet | Run `npx prisma migrate deploy` from your computer with `DATABASE_URL` and `DIRECT_URL` set to the Supabase **Session pooler** connection (section 2.3) |
 | Catalogue: 0 published | Run `npm run db:seed` against Supabase, or add products in `/admin` |
 | Admin account: none yet | Run `npm run admin:create -- --email you@example.com` against Supabase |
 

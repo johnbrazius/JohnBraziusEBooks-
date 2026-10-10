@@ -37,10 +37,43 @@ export async function runHealthChecks(): Promise<{ ok: boolean; checks: Check[] 
     fix: "Set NEXT_PUBLIC_SITE_URL to your site address, e.g. https://your-project.vercel.app, then redeploy.",
   });
 
+  // Common Supabase misconfigurations that make pages hang or fail on Vercel.
+  for (const name of ["DATABASE_URL", "DIRECT_URL"] as const) {
+    const raw = process.env[name];
+    if (!raw) continue;
+    let url: URL | null = null;
+    try {
+      url = new URL(raw);
+    } catch {
+      checks.push({ name: `${name} format`, ok: false, detail: "Not a valid connection string", fix: "Paste the full postgresql://… string from Supabase → Connect. If your password contains special characters like @ # / ?, reset it to letters and numbers only." });
+      continue;
+    }
+    if (/^db\..+\.supabase\.co$/.test(url.hostname)) {
+      checks.push({
+        name: `${name} host`,
+        ok: false,
+        detail: "Uses Supabase's Direct connection host (IPv6-only); Vercel can't reach it",
+        fix: name === "DATABASE_URL"
+          ? "Use the Transaction pooler string (port 6543, host *.pooler.supabase.com) with ?pgbouncer=true&connection_limit=1, then redeploy."
+          : "Use the Session pooler string (port 5432, host *.pooler.supabase.com), then redeploy.",
+      });
+    }
+    if (raw.includes("[YOUR-PASSWORD]")) {
+      checks.push({ name: `${name} password`, ok: false, detail: "Still contains the [YOUR-PASSWORD] placeholder", fix: "Replace [YOUR-PASSWORD] with your actual Supabase database password, then redeploy." });
+    }
+    if (name === "DATABASE_URL" && url.port === "6543" && url.searchParams.get("pgbouncer") !== "true") {
+      checks.push({ name: "DATABASE_URL pooler flag", ok: false, detail: "Transaction pooler used without ?pgbouncer=true", fix: "Add ?pgbouncer=true&connection_limit=1 to the end of DATABASE_URL, then redeploy." });
+    }
+  }
+
   let dbOk = false;
   if (set("DATABASE_URL")) {
     try {
-      await db.$queryRaw`SELECT 1`;
+      // Fail fast instead of hanging until the serverless function times out.
+      await Promise.race([
+        db.$queryRaw`SELECT 1`,
+        new Promise((_, reject) => setTimeout(() => reject(new Error("timed out after 8s")), 8000)),
+      ]);
       dbOk = true;
       checks.push({ name: "Database connection", ok: true, detail: "Connected" });
     } catch (err) {
@@ -110,7 +143,7 @@ export async function runHealthChecks(): Promise<{ ok: boolean; checks: Check[] 
     fix: "Optional for now. See docs/PAYMENTS.md to set up Razorpay.",
   });
 
-  const critical = ["DATABASE_URL", "AUTH_SECRET", "Database connection", "Database tables"];
+  const critical = ["DATABASE_URL", "AUTH_SECRET", "Database connection", "Database tables", "DATABASE_URL host", "DATABASE_URL password", "DATABASE_URL format", "DATABASE_URL pooler flag"];
   const ok = checks.filter((c) => critical.includes(c.name)).every((c) => c.ok) && checks.some((c) => c.name === "Database tables");
   return { ok, checks: checks.map((c) => (c.ok ? { name: c.name, ok: c.ok, detail: c.detail } : c)) };
 }
