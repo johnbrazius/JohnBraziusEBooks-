@@ -6,6 +6,9 @@ import { activeProvider } from "@/lib/payments";
 import { SiteHeader } from "@/components/store/SiteHeader";
 import { SiteFooter } from "@/components/store/SiteFooter";
 
+// Every storefront page reads live catalogue data and the visitor's currency, so never prerender at build time.
+export const dynamic = "force-dynamic";
+
 export default async function StoreLayout({ children }: { children: React.ReactNode }) {
   const [settings, currency, pages, categories] = await Promise.all([
     getSettings(),
