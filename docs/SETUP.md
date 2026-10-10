@@ -185,3 +185,20 @@ Before launch: replace or archive the **demo products** (Admin → Products → 
 - **Razorpay:** Dashboard → Transactions, Settlements, and Webhooks → delivery logs (failed webhooks are retried).
 - **Admin → Orders:** any order stuck in "pending" with a captured payment usually means a webhook problem. Check
   the webhook URL and secret.
+
+---
+
+## 10. Troubleshooting
+
+**The site shows "The store can't load right now"** → open `https://<your-site>/api/health`. It lists each setting
+with ✓/✗ and a plain-language fix (it never shows secret values). The most common causes on a first deploy:
+
+| `/api/health` says | Fix |
+|---|---|
+| `DATABASE_URL` / `AUTH_SECRET` missing | Add it in Vercel → Settings → Environment Variables, then **Redeploy** (variables only apply to new deployments) |
+| Database connection: wrong username or password / unreachable | Copy the string again from Supabase → Connect; replace `[YOUR-PASSWORD]` with your real database password; un-pause the project |
+| Database tables: not created yet | Run `npx prisma migrate deploy` from your computer with `DATABASE_URL` and `DIRECT_URL` set to the Supabase **direct** connection (section 2.3) |
+| Catalogue: 0 published | Run `npm run db:seed` against Supabase, or add products in `/admin` |
+| Admin account: none yet | Run `npm run admin:create -- --email you@example.com` against Supabase |
+
+For the exact error, open Vercel → Project → **Logs**, then filter by the error reference shown on the error page.
