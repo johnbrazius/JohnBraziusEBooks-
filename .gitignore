@@ -13,8 +13,8 @@ next-env.d.ts
 !.env.example
 
 # private local storage (uploaded ebooks/covers in local dev) — NEVER commit
-storage/
-backups/
+/storage/
+/backups/
 
 # testing
 coverage/
