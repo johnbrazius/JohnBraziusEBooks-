@@ -1,0 +1,27 @@
+# dependencies
+node_modules/
+
+# next.js
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# env files — NEVER commit real credentials
+.env
+.env.*
+!.env.example
+
+# private local storage (uploaded ebooks/covers in local dev) — NEVER commit
+storage/
+backups/
+
+# testing
+coverage/
+test-results/
+playwright-report/
+
+# misc
+.DS_Store
+*.pem
+.vercel

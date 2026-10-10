@@ -1,0 +1,338 @@
+// Website Growth Lab — database schema
+// Money is always stored as integers in the currency's minor unit
+// (e.g. 1000 = $10.00 USD, 49900 = ₹499.00 INR). Currency codes are ISO 4217, uppercase.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Used by `prisma migrate` when DATABASE_URL points at a connection pooler (e.g. Supabase port 6543).
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Administrators
+// ---------------------------------------------------------------------------
+
+model AdminUser {
+  id               String    @id @default(cuid())
+  email            String    @unique
+  name             String?
+  passwordHash     String
+  // Incrementing this invalidates every existing session for the user.
+  sessionVersion   Int       @default(1)
+  failedLoginCount Int       @default(0)
+  lockedUntil      DateTime?
+  lastLoginAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Catalogue
+// ---------------------------------------------------------------------------
+
+model Category {
+  id             String    @id @default(cuid())
+  name           String
+  slug           String    @unique
+  description    String    @default("")
+  seoTitle       String?
+  seoDescription String?
+  sortOrder      Int       @default(0)
+  products       Product[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([sortOrder])
+}
+
+enum ProductType {
+  EBOOK
+  BUNDLE
+}
+
+enum ProductStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+model Product {
+  id               String        @id @default(cuid())
+  type             ProductType   @default(EBOOK)
+  status           ProductStatus @default(DRAFT)
+  title            String
+  subtitle         String?
+  slug             String        @unique
+  shortDescription String        @default("")
+  description      String        @default("") // Markdown
+  audience         String        @default("") // Markdown: who this is for
+  learningOutcomes String[]      @default([])
+  tableOfContents  String        @default("") // Markdown / one chapter per line
+  faq              Json          @default("[]") // [{ question, answer }]
+  tags             String[]      @default([])
+  fileFormat       String        @default("PDF")
+  pageCount        Int?
+  language         String        @default("English")
+  author           String?
+  isFeatured       Boolean       @default(false)
+  // Marks seeded sample products so they are never mistaken for real inventory.
+  isDemo           Boolean       @default(false)
+  seoTitle         String?
+  seoDescription   String?
+  coverPath        String?
+  coverAlt         String?
+  saleStartsAt     DateTime?
+  saleEndsAt       DateTime?
+  categoryId       String?
+  category         Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  prices           ProductPrice[]
+  files            ProductFile[]
+  bundleItems      BundleItem[]  @relation("BundleParent")
+  includedIn       BundleItem[]  @relation("BundleChild")
+  orderItems       OrderItem[]
+  downloadGrants   DownloadGrant[]
+  discountCodes    DiscountCode[]
+  views            ProductViewDaily[]
+  publishedAt      DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@index([status, publishedAt])
+  @@index([categoryId])
+  @@index([isFeatured])
+}
+
+model ProductPrice {
+  id         String  @id @default(cuid())
+  productId  String
+  product    Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  currency   String
+  amount     Int
+  // Optional promotional price, active only inside the product's sale window.
+  saleAmount Int?
+
+  @@unique([productId, currency])
+}
+
+enum FileKind {
+  MAIN   // the paid download
+  SAMPLE // free preview / sample chapter
+}
+
+model ProductFile {
+  id          String   @id @default(cuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  kind        FileKind
+  storagePath String
+  fileName    String
+  mimeType    String
+  sizeBytes   Int
+  createdAt   DateTime @default(now())
+
+  @@unique([productId, kind])
+}
+
+model BundleItem {
+  bundleId  String
+  bundle    Product @relation("BundleParent", fields: [bundleId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation("BundleChild", fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([bundleId, productId])
+}
+
+// ---------------------------------------------------------------------------
+// Promotions
+// ---------------------------------------------------------------------------
+
+enum DiscountType {
+  PERCENT
+  FIXED
+}
+
+model DiscountCode {
+  id              String       @id @default(cuid())
+  code            String       @unique // stored uppercase
+  description     String?
+  type            DiscountType
+  percentOff      Int?         // 1–100, for PERCENT
+  amountOff       Int?         // minor units, for FIXED
+  currency        String?      // required for FIXED — only applies to checkouts in this currency
+  minSubtotal     Int?         // minor units in checkout currency (FIXED) or any currency (PERCENT)
+  startsAt        DateTime?
+  endsAt          DateTime?
+  maxRedemptions  Int?
+  redemptionCount Int          @default(0)
+  active          Boolean      @default(true)
+  appliesToAll    Boolean      @default(true)
+  products        Product[]    // used when appliesToAll = false
+  orders          Order[]
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Orders, payments, delivery
+// ---------------------------------------------------------------------------
+
+enum OrderStatus {
+  PENDING
+  PAID
+  FAILED
+  CANCELLED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum EmailStatus {
+  NOT_SENT
+  SENT
+  FAILED
+  SKIPPED // no email service configured
+}
+
+model Order {
+  id                String       @id @default(cuid())
+  reference         String       @unique
+  email             String
+  status            OrderStatus  @default(PENDING)
+  currency          String
+  subtotalAmount    Int
+  discountAmount    Int          @default(0)
+  totalAmount       Int
+  refundedAmount    Int          @default(0)
+  discountCodeId    String?
+  discountCode      DiscountCode? @relation(fields: [discountCodeId], references: [id], onDelete: SetNull)
+  discountCodeText  String?
+  provider          String
+  providerOrderId   String?      @unique
+  providerPaymentId String?
+  emailStatus       EmailStatus  @default(NOT_SENT)
+  failureReason     String?
+  items             OrderItem[]
+  grants            DownloadGrant[]
+  events            PaymentEvent[]
+  refunds           Refund[]
+  paidAt            DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  @@index([status, createdAt])
+  @@index([email])
+}
+
+model OrderItem {
+  id            String   @id @default(cuid())
+  orderId       String
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId     String?
+  product       Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  titleSnapshot String
+  productType   ProductType @default(EBOOK)
+  unitAmount    Int
+  quantity      Int      @default(1)
+}
+
+model PaymentEvent {
+  id          String    @id @default(cuid())
+  provider    String
+  eventId     String
+  type        String
+  orderId     String?
+  order       Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  payload     Json
+  processedAt DateTime?
+  error       String?
+  receivedAt  DateTime  @default(now())
+
+  @@unique([provider, eventId])
+}
+
+model Refund {
+  id               String   @id @default(cuid())
+  orderId          String
+  order            Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  providerRefundId String   @unique
+  amount           Int
+  status           String
+  createdAt        DateTime @default(now())
+}
+
+model DownloadGrant {
+  id             String    @id @default(cuid())
+  orderId        String
+  order          Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  downloadCount  Int       @default(0)
+  maxDownloads   Int       @default(10)
+  expiresAt      DateTime?
+  revokedAt      DateTime?
+  lastDownloadAt DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@unique([orderId, productId])
+}
+
+// ---------------------------------------------------------------------------
+// Marketing, content, settings
+// ---------------------------------------------------------------------------
+
+enum SubscriberStatus {
+  SUBSCRIBED
+  UNSUBSCRIBED
+}
+
+model NewsletterSubscriber {
+  id               String           @id @default(cuid())
+  email            String           @unique
+  status           SubscriberStatus @default(SUBSCRIBED)
+  consentText      String
+  consentAt        DateTime
+  unsubscribeToken String           @unique
+  source           String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+}
+
+// Privacy-conscious analytics: one counter per product per day. No IPs, cookies or user IDs.
+model ProductViewDaily {
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  day       DateTime @db.Date
+  views     Int      @default(0)
+
+  @@id([productId, day])
+}
+
+model Page {
+  id              String   @id @default(cuid())
+  slug            String   @unique
+  title           String
+  body            String   // Markdown
+  metaDescription String?
+  // Legal starter copy ships with this set; clear it once a professional has reviewed the page.
+  needsReview     Boolean  @default(true)
+  showInFooter    Boolean  @default(true)
+  updatedAt       DateTime @updatedAt
+  createdAt       DateTime @default(now())
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+// Fixed-window rate-limit counters, shared across serverless instances.
+model RateLimit {
+  key     String   @id
+  count   Int
+  resetAt DateTime
+}
